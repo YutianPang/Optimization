@@ -26,62 +26,55 @@ class CGoptimizer(object):
         for j in range(1, self.p + 1):
             self.x[j][0] = j / float(self.p)
             self.x[self.p][j] = 1 - (j/float(self.p))
-        #print 'Initial x is \n', self.x
+        # reshape to a vector
+        self.x = np.reshape(self.x, ((self.p+1)**2, 1))
 
         # initial pk
-        self.pk = 0
-        self.pk = self.pk - df(self.p, self.x)
-        #print 'Initial pk is \n', self.pk
+        self.gk = df(self.p, self.x)
+        self.pk = -self.gk
 
         # initial f
-        f0 = f(self.p, self.x)
-        print 'Initial f is ' + str(f0)
+        f_initial = f(self.p, self.x)
+        print 'Initial f is ' + str(f_initial)
 
     def compute(self):
 
         count = 0
 
-        while(np.round(np.linalg.norm(df(self.p, self.x))/.5)*.5) >= self.threshold:
+        while np.linalg.norm(self.gk) >= self.threshold:
 
-            grad = df(self.p, self.x)
+            # update ak
+            self.ak = np.dot(self.gk.T, self.pk)/np.dot(self.pk.T, self.gk-df(self.p, self.x - self.gk))
+            # update x new
+            self.x = self.x + self.ak * self.pk
+            # x new gradient
+            self.gk_new = df(self.p, self.x)
+            # compute beta
+            self.beta = np.dot(self.gk_new.T, self.gk_new)/np.dot(self.gk.T, self.gk)
+            # compute pk_new
+            self.pk = -self.gk_new + self.beta * self.pk
+            # update gk
+            self.gk = self.gk_new
 
-            # backtracking line search
-            pk = df(self.p, self.x)
-            # procedure 3.1, page 41
-            while f(self.p, self.x - self.alpha * pk) > (f(self.p, self.x) - self.c * self.alpha * (np.linalg.norm(pk)) ** 2):  # ???
-                self.alpha = self.rho * self.alpha
-
-            # gradient descent
-            self.x = self.x + self.alpha * self.pk
-
-            # calculate new gradient
-            grad_new = df(self.p, self.x)
-
-            # check beta
-            beta = np.linalg.norm(grad_new.T*(grad_new - grad))/(np.linalg.norm(grad))**2
-
-            if beta < 0:
-                beta = 0
-
-            self.pk = -grad_new + beta * self.pk
+            count += 1
 
             print 'The minimized value after iteration ' + str(count+1) + ' is ' + str(f(self.p, self.x))
-            count += 1
+
 
         fmin = f(self.p, self.x)
         print 'Minimized f is ', fmin
 
         file = open("fmin", "a")
-        file.write("f minimum for p = " + str(self.p) + " is " + str(fmin) + "\n")
+        file.write("After iteration "+ str(count) + ", optimization finished with " + "f minimum for p = " + str(self.p) + " is " + str(fmin) + "\n")
         file.close()
 
-        #print 'Corresponding x is \n', self.x
         np.save("X" + str(self.p), self.x)
         print 'Optimization finished \n'
 
 
 def f(p, x):
 
+    x = np.reshape(x, (p+1, p+1))
     # calculate minimized objective value f
     f = 0
     for i in range(p):
@@ -91,15 +84,27 @@ def f(p, x):
 
 
 def df(p, x):
+
+    x = np.reshape(x, (p+1, p+1))
     # find the gradient of x
     df = np.zeros((p+1, p+1))
     for i in range(1, p):
         for j in range(1, p):
             df[i][j] = 4 * x[i][j] - x[i+1][j+1] - x[i-1][j-1] - x[i+1][j-1] - x[i-1][j+1]
+
+    # add boundary conditions to df
+    df[0, :] = 0
+    df[:, 0] = 0
+    df[-1, :] = 0
+    df[:, -1] = 0
+
+    # reshape back into a vector
+    df = np.reshape(df, ((p+1)**2, 1))
     return df
 
 
 def plot_x(p, data):
+    data = np.reshape(data, (p+1, p+1))
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     xx = np.arange(0, p+1, 1)
@@ -115,11 +120,12 @@ def plot_x(p, data):
 
 if __name__ == '__main__':
 
-    # paramaters for line search
+    # parameters for linesearch
     alpha = 1
     c = 0.25
     rho = 0.5
 
+    #p = [101]
     p = np.asarray([101, 201, 301, 401, 501])
 
     threshold = 1e-10
